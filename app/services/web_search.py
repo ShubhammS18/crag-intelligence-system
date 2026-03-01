@@ -12,17 +12,38 @@ tavily = TavilySearch(max_results=5)
 def search_web(query: str) -> list[Document]:
     """
     Run a Tavily web search and return results as LangChain Documents.
-    Each Document has page_content = title + url + content.
+    Handles both dict and string result formats across Tavily versions.
     """
-    results = tavily.invoke({'query': query})
+    raw = tavily.invoke({'query': query})
+
+    # Newer langchain-tavily versions return a dict with 'results' key
+    # Older versions return a list directly
+    if isinstance(raw, dict):
+        results = raw.get('results', [])
+    elif isinstance(raw, list):
+        results = raw
+    else:
+        return []
+
     web_docs = []
-    for r in results or []:
-        title   = r.get('title', '')
-        url     = r.get('url', '')
-        content = r.get('content', '') or r.get('snippet', '')
-        text    = f'TITLE: {title}\nURL: {url}\nCONTENT:\n{content}'
+    for r in results:
+        # Handle dict result
+        if isinstance(r, dict):
+            title   = r.get('title', '')
+            url     = r.get('url', '')
+            content = r.get('content', '') or r.get('snippet', '')
+        # Handle string result (some versions return raw strings)
+        elif isinstance(r, str):
+            title   = ''
+            url     = ''
+            content = r
+        else:
+            continue
+
+        text = f'TITLE: {title}\nURL: {url}\nCONTENT:\n{content}'
         web_docs.append(Document(
             page_content=text,
             metadata={'url': url, 'title': title, 'type': 'web'}
         ))
+
     return web_docs

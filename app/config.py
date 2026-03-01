@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     langchain_project:    str = 'crag-intelligence-system'
 
     # Model names 
-    haiku_model:  str = 'claude-haiku-3-5-20241022'
-    sonnet_model: str = 'claude-sonnet-3-5-20241022'
+    haiku_model:  str = 'claude-haiku-4-5-20251001'
+    sonnet_model: str = 'claude-sonnet-4-5-20250929'
 
     # Retrieval 
     top_k:         int   = 4
