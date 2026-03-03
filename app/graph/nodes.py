@@ -10,6 +10,14 @@ from app.models import DocEvalScore, WebQuery, KeepOrDrop
 from app.services.retriever import get_retriever
 from app.services.web_search import search_web
 
+# All prompts are versioned here
+from app.prompts import (
+    DOC_EVAL_SYSTEM, DOC_EVAL_HUMAN,
+    REWRITE_SYSTEM, REWRITE_HUMAN,
+    FILTER_SYSTEM, FILTER_HUMAN,
+    ANSWER_SYSTEM, ANSWER_HUMAN )
+
+
 # Models
 haiku  = ChatAnthropic(model=settings.haiku_model,  temperature=0)
 sonnet = ChatAnthropic(model=settings.sonnet_model, temperature=0)
@@ -28,17 +36,8 @@ def retrieve(state: GraphState) -> dict:
 # Assigns verdict: CORRECT / AMBIGUOUS / INCORRECT
 # Populates good_docs with any chunk scoring > lower_th
 doc_eval_prompt = ChatPromptTemplate.from_messages([
-    ('system',
-        'You are a strict retrieval evaluator for RAG.\n'
-        'You will be given ONE retrieved chunk and a question.\n'
-        'Return a relevance score in [0.0, 1.0].\n'
-        '- 1.0: chunk alone is sufficient to answer fully/mostly\n'
-        '- 0.0: chunk is irrelevant\n'
-        'Be conservative with high scores.\n'
-        'Also return a short reason.\n'
-        'Output JSON only.'),
-    ('human', 'Question: {question}\n\nChunk:\n{chunk}'),
-])
+    ('system', DOC_EVAL_SYSTEM),
+    ('human', DOC_EVAL_HUMAN) ])
 
 doc_eval_chain = doc_eval_prompt | haiku.with_structured_output(DocEvalScore)
 
@@ -88,15 +87,8 @@ def eval_each_doc(state: GraphState) -> dict:
 # Only called on AMBIGUOUS or INCORRECT path.
 # Converts the user question into a short keyword web query.
 rewrite_prompt = ChatPromptTemplate.from_messages([
-    ('system',
-        'Rewrite the user question into a web search query of keywords.\n'
-        'Rules:\n'
-        '- Keep it short (6-14 words).\n'
-        '- If question implies recency, add (last 30 days).\n'
-        '- Do NOT answer the question.\n'
-        '- Return JSON with a single key: query'),
-    ('human', 'Question: {question}'),
-])
+    ('system', REWRITE_SYSTEM),
+    ('human', REWRITE_HUMAN) ])
 
 rewrite_chain = rewrite_prompt | haiku.with_structured_output(WebQuery)
 
@@ -119,12 +111,8 @@ def web_search(state: GraphState) -> dict:
 # Assembles the right docs based on verdict
 # decomposes to sentences, LLM judges each sentence keep/drop.
 filter_prompt = ChatPromptTemplate.from_messages([
-    ('system',
-        'You are a strict relevance filter.\n'
-        'Return keep=true ONLY if the sentence directly helps answer the question.\n'
-        'Use ONLY the sentence itself. Output JSON only.'),
-    ('human', 'Question: {question}\n\nSentence:\n{sentence}'),
-])
+    ('system', FILTER_SYSTEM),
+    ('human', FILTER_HUMAN) ])
 
 filter_chain = filter_prompt | haiku.with_structured_output(KeepOrDrop)
 
@@ -168,12 +156,8 @@ def refine(state: GraphState) -> dict:
 
 # NODE 6: generate
 answer_prompt = ChatPromptTemplate.from_messages([
-    ('system',
-        'You are a corporate intelligence analyst.\n'
-        'Answer ONLY using the provided context.\n'
-        "If the context is empty or insufficient, say: I don't know."),
-    ('human', 'Question: {question}\n\nContext:\n{context}'),
-])
+    ('system', ANSWER_SYSTEM),
+    ('human', ANSWER_HUMAN) ])
 
 
 def generate(state: GraphState) -> dict:
