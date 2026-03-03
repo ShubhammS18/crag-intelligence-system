@@ -182,3 +182,5 @@ cython_debug/
 .cursorindexingignore
 
 vector_store/
+
+request_log.jsonl

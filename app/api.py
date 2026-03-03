@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from app.models import AskRequest, AskResponse
 from app.graph.graph import compiled_graph
 from app.prompts import PROMPT_VERSION
+from app.request_logger import log_request, compute_metrics
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -63,6 +64,16 @@ def health():
         'prompt_version': PROMPT_VERSION }
 
 
+@app.get('/metrics')
+def metrics():
+    """
+    Returns aggregated metrics computed from request_log.jsonl.
+    Covers: failure rate, citation coverage, latency P50/P95,
+    avg cost per request, verdict distribution.
+    """
+    return compute_metrics()
+
+
 @app.post('/ask', response_model=AskResponse)
 def ask(request: AskRequest):
     if not request.question.strip():
@@ -71,34 +82,54 @@ def ask(request: AskRequest):
     logger.info(f'question="{request.question[:80]}" prompt_version={PROMPT_VERSION}')
 
     start = time.perf_counter()
+    error   = None
+    verdict = 'INCORRECT'
+    n_kept  = 0
+    result  = {}
 
-    result = compiled_graph.invoke({
-        'question':  request.question,
-        'docs':      [],
-        'good_docs': [],
-        'verdict':   '',
-        'reason':    '',
-        'web_query': '',
-        'web_docs':  [],
-        'strips':    [],
-        'kept_strips':  [],
-        'refined_context': '',
-        'answer':    '' })
+    try:
+        result = compiled_graph.invoke({
+            'question':  request.question,
+            'docs':      [],
+            'good_docs': [],
+            'verdict':   '',
+            'reason':    '',
+            'web_query': '',
+            'web_docs':  [],
+            'strips':    [],
+            'kept_strips':  [],
+            'refined_context': '',
+            'answer':    '' })
+        verdict = result.get('verdict', 'INCORRECT')
+        n_kept  = len(result.get('kept_strips', []))
+    
+    except Exception as e:
+        error = e
+        logger.error(f'Graph execution failed: {e}')
+    
+    finally:
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        cost = _estimate_cost(verdict, n_kept)
+        log_request(
+            question=request.question,
+            verdict=verdict,
+            latency_ms=latency_ms,
+            kept_strips_count=n_kept,
+            estimated_cost_usd=cost,
+            prompt_version=PROMPT_VERSION,
+            error=error)
 
-    latency_ms = int((time.perf_counter() - start) * 1000)
-    n_kept     = len(result.get('kept_strips', []))
-    verdict    = result.get('verdict', 'INCORRECT')
-    cost       = _estimate_cost(verdict, n_kept)
+    if error:
+        raise HTTPException(status_code=500, detail=str(error))
 
     logger.info(
-        f'verdict={verdict} kept_strips={n_kept} '
-        f'latency_ms={latency_ms} estimated_cost_usd={cost}'
-    )
+        f'verdict={verdict} kept={n_kept} '
+        f'latency_ms={latency_ms} cost_usd={cost}')
 
     return AskResponse(
         answer=result['answer'],
-        verdict=result['verdict'],
+        verdict=verdict,
         reason=result['reason'],
         kept_strips=result.get('kept_strips', []),
         latency_ms=latency_ms,
-        estimated_cost_usd=cost )
+        estimated_cost_usd=cost)
