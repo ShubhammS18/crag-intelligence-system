@@ -28,7 +28,10 @@ def test_ask_returns_structured_response():
         'strips':          [],
         'refined_context': 'The corporate tax rate is 0% for startups under 3M AED.',
         'question':  'What is the tax rate?',
-    }
+        'latency_ms':   1234,
+        'estimated_cost_usd': 0.005}
+    
+    
     with patch('app.api.compiled_graph') as mock_graph:
         mock_graph.invoke.return_value = mock_result
         response = client.post('/ask', json={'question': 'What is the tax rate?'})
@@ -37,6 +40,9 @@ def test_ask_returns_structured_response():
     assert 'answer'  in data
     assert 'verdict' in data
     assert data['verdict'] == 'CORRECT'
+    assert 'latency_ms'  in data
+    assert 'estimated_cost_usd' in data
+
 
 
 def test_ask_rejects_empty_question():

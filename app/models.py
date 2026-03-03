@@ -12,6 +12,9 @@ class AskResponse(BaseModel):
     verdict : str       # CORRECT | AMBIGUOUS | INCORRECT
     reason : str          
     kept_strips : List[str]
+    latency_ms: int     # total wall-clock time for this request
+    estimated_cost_usd: float    # rough cost estimate — LangSmith has exact
+
 
 
 # Internal structured output schemas for LLM calls
